@@ -357,10 +357,23 @@ func TestBuiltinMigrationsRoundTrip(t *testing.T) {
 	execSQL(t, dsn, "INSERT INTO session_task (history_id, id, state, data) VALUES ($1, 'task', 'TASK_STATE_INPUT_REQUIRED', $2)", historyID, []byte{})
 	scheduleID := "00000000-0000-0000-0000-000000000003"
 	executionID := "00000000-0000-0000-0000-000000000004"
-	execSQL(t, dsn, `INSERT INTO scheduled_run (id, creator, request_id, request_hash, data)
-        VALUES ($1, 'user', 'schedule', $2, $3)`, scheduleID, make([]byte, 32), []byte{})
+	execSQL(t, dsn, `INSERT INTO scheduled_run (id, creator, namespace, name, generation, data)
+        VALUES ($1, 'scheduler', 'team', 'schedule', 1, $2)`, scheduleID, []byte{})
 	execSQL(t, dsn, `INSERT INTO scheduled_run_execution (id, scheduled_run_id, manual_request_id, session_id, data, deadline)
         VALUES ($1, $2, 'manual', $3, $4, statement_timestamp() + interval '1 minute')`, executionID, scheduleID, sessionID, []byte{})
+	// The CRD cutover cannot downgrade populated schedule payloads. It must fail
+	// atomically, leaving the current schema and records intact.
+	if err := WithProvider(t.Context(), config, sources[0], func(provider *goose.Provider) error {
+		_, err := provider.Down(t.Context())
+		return err
+	}); err == nil {
+		t.Fatal("downgrade accepted an incompatible schedule payload")
+	}
+	if !testColumnExists(t, dsn, "scheduled_run", "namespace") || testColumnExists(t, dsn, "scheduled_run", "request_id") {
+		t.Fatal("failed downgrade changed the schedule schema")
+	}
+	execSQL(t, dsn, "DELETE FROM scheduled_run_execution WHERE id = $1", executionID)
+	execSQL(t, dsn, "DELETE FROM scheduled_run WHERE id = $1", scheduleID)
 	for _, source := range slices.Backward(sources) {
 		if err := WithProvider(context.Background(), config, source, func(provider *goose.Provider) error {
 			_, err := provider.DownTo(context.Background(), 0)

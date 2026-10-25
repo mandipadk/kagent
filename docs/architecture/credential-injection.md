@@ -102,7 +102,7 @@ machine. It never looks up a token from the Session creator. The scheduler uses
 a verified kagent service-account credential with a separate downstream audience.
 A later human continuation
 uses that human's credential while retaining the conversation and creator.
-See [runtime authority](a2a-gateway.md#runtime-authority).
+See [caller identity](scheduled-runs-and-caller-identity.md).
 
 The control plane forwards the authenticated invocation's caller credential in
 private A2A metadata. Go and Python retain it only in invocation-local context.
